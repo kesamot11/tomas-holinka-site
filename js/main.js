@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { animate, onScroll, stagger, splitText } from 'animejs';
 import { buildWorld, ORDER, NAMES, W, TOP, R, CAM } from './world.js';
 
-const ACC = '#FF7A3D';
+const ACC = '#ff5fc0'; // Thompson magenta; cyan #5be3ff and violet #b489ff are the supporting accents
 const N = ORDER.length;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -13,9 +13,9 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog('#E4F1F1', 90, 200);
+scene.fog = new THREE.Fog('#ECE9F6', 90, 200);
 const camera = new THREE.PerspectiveCamera(35, 1, .1, 300);
-scene.add(new THREE.HemisphereLight('#D9F0FA', '#E9D3B2', 1.6));
+scene.add(new THREE.HemisphereLight('#D9F0FA', '#EAD9EE', 1.6));
 const sun = new THREE.DirectionalLight('#FFF1DC', 2.4);
 sun.position.set(-8, 18, 18);
 sun.target.position.set(13, 0, 20);

@@ -183,14 +183,16 @@ const court = () => {
   for (const sx of [-1, 1]) lines.push(...at(box(.03, .065, .6, red), sx * .7, 0, .52), ...at(box(.6, .065, .03, red), sx * 1.0, 0, .82));
   return [floor, front, sides[0], sides[1], lines];
 };
-const racketParts = acc => {
+// Tecnifibre Carboflex X-Top style (Marwan El Shorbagy): white frame with a black top, black throat and grip, green 305 strings
+const racketParts = () => {
   const cy = 1.95, ax = .42, ay = .58, n = 18, E = Array.from({ length: n + 1 }, (_, k) => { const a = k / n * Math.PI * 2; return [Math.cos(a) * ax, cy + Math.sin(a) * ay]; });
-  const strings = [F(E.slice(0, n).map(p => [p[0], p[1], 0]), '#F4EFE2', [0, cy, 0], 1, .95)];
-  for (const x of [-.28, -.14, 0, .14, .28]) { const hh = ay * Math.sqrt(1 - (x / ax) ** 2) - .03; strings.push(...beam([x, cy - hh], [x, cy + hh], .014, .03, '#C9BFA9')); }
-  for (const y of [-.4, -.2, 0, .2, .4]) { const ww = ax * Math.sqrt(1 - (y / ay) ** 2) - .03; strings.push(...beam([-ww, cy + y], [ww, cy + y], .014, .03, '#C9BFA9')); }
+  const white = '#F4F4F2', black = '#16171C', green = '#7CC243';
+  const strings = [F(E.slice(0, n).map(p => [p[0], p[1], 0]), '#EEF3E6', [0, cy, 0], 1, .95)];
+  for (const x of [-.28, -.14, 0, .14, .28]) { const hh = ay * Math.sqrt(1 - (x / ax) ** 2) - .03; strings.push(...beam([x, cy - hh], [x, cy + hh], .014, .03, green)); }
+  for (const y of [-.4, -.2, 0, .2, .4]) { const ww = ax * Math.sqrt(1 - (y / ay) ** 2) - .03; strings.push(...beam([-ww, cy + y], [ww, cy + y], .014, .03, green)); }
   return [
-    [...cyl(.075, .075, .75, 8, '#23263A'), ...at(cyl(.09, .09, .06, 8, acc), 0, .72, 0), ...beam([0, .78], [0, 1.2], .07, .06, '#3A3F5C')],
-    [...beam([0, 1.18], [-.33, 1.5], .05, .05, acc), ...beam([0, 1.18], [.33, 1.5], .05, .05, acc), ...E.slice(0, n).flatMap((p, k) => beam(p, E[k + 1], .07, .07, acc))],
+    [...cyl(.075, .075, .75, 8, black), ...at(cyl(.09, .09, .06, 8, white), 0, .72, 0), ...beam([0, .78], [0, 1.2], .07, .06, black)],
+    [...beam([0, 1.18], [-.33, 1.5], .05, .05, black), ...beam([0, 1.18], [.33, 1.5], .05, .05, black), ...E.slice(0, n).flatMap((p, k) => beam(p, E[k + 1], .07, .07, (p[1] + E[k + 1][1]) / 2 > cy + ay * .7 ? black : white))],
     strings
   ];
 };
@@ -241,7 +243,16 @@ const blades = () => {
   }
   return bl;
 };
-const mountainParts = () => [cyl(.95, 0, 1.6, 7, '#8E8A90'), at(cyl(.42, 0, .72, 7, '#F7F7F4'), 0, .9, 0), [...at(tree(1), -.85, 0, .45), ...xf(tree(1), { s: [.7, .7, .7], t: [.7, 0, .55] })]];
+// rock and snow share one edge (same ring of vertices), so nothing overlaps or flickers
+const mountainParts = () => {
+  const n = 7, rock = cyl(.95, .42, .9, n, '#8E8A90').slice(0, n), snow = at(cyl(.42, 0, .7, n, '#F7F7F4'), 0, .9, 0).slice(0, n);
+  return [[...rock, ...snow], [...xf(tree(1), { s: [.75, .75, .75], t: [-.62, 0, .5] }), ...xf(tree(1), { s: [.65, .65, .65], t: [.62, 0, .45] })]];
+};
+// a little Swiss train: red body, white stripe, dark windows, pantograph on the loco
+const swissCar = loco => toMesh([
+  ...at(box(.16, .04, .3, '#1D2033'), 0, 0, 0), ...at(box(.2, .18, .42, '#D52B1E'), 0, .04, 0),
+  ...at(box(.206, .025, .4, '#F6F2EA'), 0, .08, 0), ...at(box(.205, .05, .34, '#2C3047'), 0, .13, 0), ...at(box(.18, .03, .42, '#C9CCD8'), 0, .22, 0),
+  ...(loco ? [...at(box(.02, .08, .02, '#2C3047'), 0, .25, .05), ...at(box(.14, .015, .03, '#2C3047'), 0, .33, .05), ...at(box(.12, .05, .02, '#FFE08A', 0, 1.3), 0, .1, .215)] : [])]);
 const dutchHouse = () => [
   box(.7, .8, .6, '#B5523A'),
   [...at(box(.56, .2, .62, '#B5523A'), 0, .8, 0), ...at(box(.4, .2, .62, '#B5523A'), 0, 1.0, 0), ...at(box(.22, .2, .62, '#B5523A'), 0, 1.2, 0)],
@@ -255,11 +266,25 @@ const tulips = () => {
   }
   return fs;
 };
-const boothParts = () => [
-  [...box(1.6, .5, .6, '#1D2033'), ...at(box(1.64, .04, .64, '#3A3F5C'), 0, .5, 0)],
-  [...at(box(.42, .06, .4, '#14151F'), -.48, .54, 0), ...at(box(.42, .06, .4, '#14151F'), .48, .54, 0), ...at(box(.3, .08, .32, '#4A5070'), 0, .54, 0)],
-  [...at(box(.1, .03, .1, '#C9CCD8'), -.08, .62, .05), ...at(box(.1, .03, .1, '#C9CCD8'), .08, .62, .05)]
+// booth: table, two CDJs (jog wheel, tilted screen, play and cue) and a DJM-style mixer in between.
+// The DJ stands at -z, so buttons sit on the near edge and the screens on the far one.
+const cdj = x => [
+  ...at(box(.4, .08, .5, '#1A1B22'), x, .54, 0), ...at(box(.41, .015, .51, '#2C2F3A'), x, .615, 0),
+  ...at(cyl(.14, .14, .02, 18, '#9AA0B5'), x, .63, -.03), ...at(cyl(.125, .125, .03, 18, '#23252E'), x, .63, -.03), ...at(cyl(.04, .04, .035, 10, '#5be3ff', 0, 1.3), x, .63, -.03),
+  ...at(xf(box(.3, .11, .02, '#0B0D14'), { x: -.75 }), x, .63, .2), ...at(xf(box(.25, .08, .01, '#5be3ff', 0, 1.25), { x: -.75 }), x, .64, .21),
+  ...at(cyl(.032, .032, .02, 10, '#5AD17A', 0, 1.3), x - .13, .63, -.2), ...at(cyl(.032, .032, .02, 10, '#FF9A3D', 0, 1.3), x - .13, .63, -.12),
+  ...at(box(.03, .01, .12, '#0B0D14'), x + .16, .63, -.05)
 ];
+const mixer = () => {
+  const fs = [...at(box(.3, .09, .48, '#22242C'), 0, .54, 0), ...at(box(.31, .012, .49, '#2C2F3A'), 0, .63, 0)];
+  [-.09, -.03, .03, .09].forEach((x, i) => {
+    fs.push(...at(box(.012, .01, .12, '#0B0D14'), x, .642, -.09), ...at(box(.035, .022, .022, '#E9EDF5'), x, .645, -.09 + (i % 2 ? .03 : -.02)));
+    for (const z of [.04, .1, .16]) fs.push(...at(cyl(.014, .014, .028, 6, z === .16 ? '#5be3ff' : '#C9CCD8'), x, .642, z));
+  });
+  fs.push(...at(box(.14, .01, .012, '#0B0D14'), 0, .642, -.2), ...at(box(.026, .022, .034, '#E9EDF5'), .02, .645, -.2));
+  return fs;
+};
+const boothParts = () => [[...box(1.6, .5, .6, '#1D2033'), ...at(box(1.64, .04, .64, '#3A3F5C'), 0, .5, 0)], cdj(-.48), cdj(.48), mixer()];
 
 // ---- Thompson mark (same path as thompsondj.com), drawn as the scan-line merch print
 const THOMPSON = 'M182 0H818A182 182 0 0 1 1000 182V818A182 182 0 0 1 818 1000H182A182 182 0 0 1 0 818V182A182 182 0 0 1 182 0ZM219 221H781V783H219ZM273 323H392V442H273ZM608 323H727V442H608ZM288 643H374V673H624V643H710V684A78 78 0 0 1 632 762H366A78 78 0 0 1 288 684Z';
@@ -269,12 +294,9 @@ function teePrint(back) {
   const draw = () => {
     const g = c.getContext('2d'), S = back ? 300 : 400, x0 = (512 - S) / 2, y0 = back ? 36 : 56, path = new Path2D(THOMPSON);
     g.fillStyle = '#F7F7F4'; g.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 15; i++) {
-      g.save(); g.translate(x0 + (i === 5 ? S * .036 : 0), y0); g.scale(S / 1000, S / 1000); g.clip(path, 'evenodd');
-      g.fillStyle = i < 6 ? '#5be3ff' : i < 9 ? '#b489ff' : '#ff5fc0';
-      g.fillRect(-60, i * 66.67 + 12, 1120, 39);
-      g.restore();
-    }
+    g.save(); g.translate(x0, y0); g.scale(S / 1000, S / 1000);
+    g.fillStyle = '#0A0A0A'; g.fill(path, 'evenodd');
+    g.restore();
     if (back) {
       g.fillStyle = '#0A0A0A'; g.textAlign = 'center';
       g.font = '700 76px Fredoka, sans-serif'; g.fillText('THOMPSON', 256, 418);
@@ -303,7 +325,7 @@ function person({ shirt = '#F7F7F4', pants = '#2C3047', skin = '#F1C7A1', hair =
   const arm = sx => node(g, { p: [sx * .3, 1.13, 0] }, toMesh([...at(box(.14, .2, .16, shirt), 0, -.2, 0), ...at(box(.11, .34, .12, skin), 0, -.54, 0)]));
   return { g, head, torso, armL: arm(-1), armR: arm(1) };
 }
-let acc0 = '#FF7A3D';
+let acc0 = '#ff5fc0';
 const mailboxParts = () => [
   box(.1, .75, .1, '#8A5A3B'),
   [...at(box(.34, .28, .55, '#E0483B'), 0, .72, 0), ...at(xf(cyl(.17, .17, .55, 8, '#E0483B'), { x: Math.PI / 2 }), 0, 1.0, -.275), ...at(box(.26, .2, .02, '#B5303A'), 0, .78, .28)]
@@ -377,14 +399,14 @@ export function buildWorld(scene, acc) {
   I = island('rally', 13, [[0, 0, 2.5]]);
   const courtG = model('rally', I, court(), { p: [0, .08, 0], r: [0, .25, 0] });
   put(I, bench(), -2.35, .55, 1.82); put(I, tree(1), -1.6, -2.1, 0, .8); put(I, tree(0), 2.3, -1.2, 0, .8); put(I, rock(.8), 2.1, 1.6);
-  const swing = node(node(courtG, { p: [.75, .5, 1.15] }), {});
+  const swing = node(node(courtG, { p: [.75, .25, 1.15] }), {});
   swing.userData.noRot = true;
-  const tilt = node(swing, { r: [0, 0, .55], s: .52 });
+  const tilt = node(swing, { r: [0, 0, 1.35], s: .52 });
   model('rally', tilt, racketParts(acc));
   const head = node(tilt, { p: [0, 1.95, 0] });
   I.updateMatrixWorld(true);
   const H = courtG.worldToLocal(head.getWorldPosition(new THREE.Vector3()));
-  const Fw = new THREE.Vector3(-.15, .95, -1.72), B1 = new THREE.Vector3(-.35, .14, .62);
+  const Fw = new THREE.Vector3(-.15, .62, -1.72), B1 = new THREE.Vector3(-.3, .16, .5);
   const ballM = node(courtG, { s: .8 }, toMesh(ball()));
   ballM.userData.noRot = true;
   const sm = x => x * x * (3 - 2 * x);
@@ -398,7 +420,8 @@ export function buildWorld(scene, acc) {
     phase += dt * speed / 1.7;
     if (Math.floor(phase) > Math.floor(before)) rallies++;
     const u = phase % 1;
-    const [a, b, s, lift] = u < .28 ? [H, Fw, u / .28, .25] : u < .55 ? [Fw, B1, (u - .28) / .27, .15] : [B1, H, (u - .55) / .45, .9];
+    // heights: racket ~.47, front wall .62, then down to the floor; the bounce peaks around .5, below where it fell from
+    const [a, b, s, lift] = u < .28 ? [H, Fw, u / .28, .1] : u < .55 ? [Fw, B1, (u - .28) / .27, .03] : [B1, H, (u - .55) / .45, .16];
     ballM.position.lerpVectors(a, b, s);
     ballM.position.y += Math.sin(Math.PI * s) * lift;
     ballM.rotation.x += dt * 14;
@@ -440,15 +463,31 @@ export function buildWorld(scene, acc) {
   });
 
   // 07 about: Delft (windmill, Dutch house, tulips) and Lausanne (snowy peak with pines)
-  I = island('about', 55, [[-1.0, -.3, .8], [1.1, -.7, 1.2], [.35, .9, .55], [-.6, 1.15, .8]]);
+  I = island('about', 55, [[-1.0, -.3, .8], [1.1, -.7, 1.55], [.35, .9, .55], [-.6, 1.15, .8]]);
   const bladeG = spinner(blades(), { p: [0, 1.42, .36] });
   const wm = model('about', I, [...windmillParts(), bladeG], { p: [-1.0, .08, -.3], r: [0, .4, 0] });
   const mt = model('about', I, mountainParts(), { p: [1.1, .08, -.7] });
   model('about', I, dutchHouse(), { p: [.35, .08, .9], r: [0, -.3, 0], s: .7 });
   put(I, tulips(), -.75, .95, .4);
   label('about', wm, [0, 2.3, 0], () => 'TU DELFT', false);
-  label('about', mt, [0, 1.95, 0], () => 'EPFL', true);
-  tickers.push(t => { bladeG.rotation.z = -t * .8; });
+  label('about', mt, [0, 2.75, 0], () => 'EPFL', true);
+  // Swiss train looping round the EPFL Alps
+  const loopR = 1.25, mc = [1.1, .1, -.7], seg = Math.PI * 2 * loopR / 28, rails = [];
+  for (let k = 0; k < 28; k++) {
+    const a = k / 28 * Math.PI * 2, am = a + Math.PI / 28;
+    rails.push(...at(xf(box(.34, .03, .07, '#7A5444'), { y: -a }), mc[0] + Math.cos(a) * loopR, mc[1], mc[2] + Math.sin(a) * loopR));
+    for (const off of [-.08, .08]) rails.push(...at(xf(box(.035, .03, seg + .01, '#9AA0B5', 0, 1.05), { y: -am }), mc[0] + Math.cos(am) * (loopR + off), mc[1] + .03, mc[2] + Math.sin(am) * (loopR + off)));
+  }
+  I.add(toMesh(rails));
+  const swiss = [swissCar(true), swissCar(false), swissCar(false)].map(m => node(I, {}, m));
+  tickers.push(t => {
+    bladeG.rotation.z = -t * .8;
+    swiss.forEach((car, j) => {
+      const a = t * .55 - j * .36;
+      car.position.set(mc[0] + Math.cos(a) * loopR, mc[1] + .05, mc[2] + Math.sin(a) * loopR);
+      car.rotation.y = Math.atan2(-Math.sin(a), Math.cos(a));
+    });
+  });
 
   // 08 dj: a full party. Me behind the decks in the Thompson tee, a dancing crowd, lights, lasers, confetti, all at 128 BPM.
   I = island('dj', 89, [[0, -.75, 1.9], [0, 1.35, 1.7], [-1.9, -.55, .6], [1.9, -.55, .6]]);
@@ -460,9 +499,8 @@ export function buildWorld(scene, acc) {
   for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) tileFaces.push(...at(box(.6, .04, .6, '#2C3047'), -.93 + c * .62, 0, .75 + r * .62));
   const floorM = toMesh(tileFaces); node(I, { p: [0, .09, 0] }, floorM);
   const tc = floorM.geometry.attributes.color, tilePal = [...NEON, '#FFC94A', '#2C3047'].map(c => new THREE.Color(c)), per = tc.count / 12;
-  // booth with spinning platters
-  const booth = model('dj', I, boothParts(), { p: [0, .53, -.35] });
-  const platters = [-.48, .48].map(x => { const g = spinner([...cyl(.16, .16, .03, 14, '#14151F'), ...cyl(.05, .05, .035, 8, acc)], { p: [x, .57, 0] }); booth.add(g); return g; });
+  // booth with two CDJs and a mixer
+  model('dj', I, boothParts(), { p: [0, .53, -.35] });
   // me, in a white Thompson tee with headphones
   acc0 = acc;
   const dj = person({ shirt: '#F7F7F4', pants: '#23263A', hair: '#3B2A20', phones: true, print: true });
@@ -480,13 +518,15 @@ export function buildWorld(scene, acc) {
     beamMats.push(mat); return piv;
   });
   const disco = node(I, { p: [0, 2.42, -1.0] }, toMesh([...sph(.2, 10, 7, '#DDE3EE', 1.15), ...at(box(.01, .3, .01, '#9AA0B5'), 0, .18, 0)]));
-  // lasers fanning out from the back of the stage
-  const laserG = node(I, { p: [0, 1.5, -1.45] });
-  const lasers = Array.from({ length: 6 }, (_, i) => {
-    const mat = new THREE.MeshBasicMaterial({ color: NEON[i % 3], transparent: true, opacity: .8, depthWrite: false, blending: THREE.AdditiveBlending });
-    const piv = node(laserG, { r: [0, (i - 2.5) * .28, 0] });
-    piv.add(new THREE.Mesh(new THREE.BoxGeometry(.025, .025, 7).translate(0, 0, 3.5), mat));
-    return { piv, mat };
+  // lasers from the top corners of the truss, sweeping out over the crowd (well clear of the DJ)
+  const lasers = [-1, 1].flatMap(side => {
+    const unit = node(I, { p: [side * 1.35, 2.72, -1.4] }, toMesh(at(box(.18, .14, .22, '#1D2033'), 0, -.07, 0)));
+    return [0, 1, 2].map(k => {
+      const mat = new THREE.MeshBasicMaterial({ color: NEON[(k + (side > 0 ? 1 : 0)) % 3], transparent: true, opacity: .8, depthWrite: false, blending: THREE.AdditiveBlending });
+      const piv = node(unit, {});
+      piv.add(new THREE.Mesh(new THREE.BoxGeometry(.025, .025, 6).translate(0, 0, 3), mat));
+      return { piv, mat, side, k };
+    });
   });
   // the crowd
   const looks = [['#E85D9A', '#3B2A20', '#F1C7A1'], ['#5B8CFF', '#D9A35E', '#E8B48A'], ['#FFC94A', '#1D2340', '#C68B5E'], ['#4FC3A1', '#8A5A3B', '#F1C7A1'], ['#FF7A3D', '#2C2C2C', '#8D5A3B'], ['#9B8CFF', '#E8D48A', '#F6D2B4'], ['#2C3047', '#B5523A', '#E8B48A']];
@@ -505,7 +545,6 @@ export function buildWorld(scene, acc) {
   let lastBeat = -1;
   tickers.push(t => {
     const beat = t * 128 / 60, ph = beat % 1, kick = Math.pow(1 - ph, 6), bar = beat % 8;
-    platters.forEach((p, i) => { p.rotation.y = -t * (3.5 + i * .4); });
     stacks.forEach(s => s.scale.setScalar(.9 * (1 + kick * .05)));
     // DJ: nods on the kick, left hand on the mixer, right hand goes up at the end of every 8 beats
     const up = bar > 6 ? Math.min(1, (bar - 6) * 3) * Math.min(1, (8 - bar) * 3) : 0;
@@ -528,8 +567,11 @@ export function buildWorld(scene, acc) {
       beamMats[i].color.setHSL((t * .08 + i * .33) % 1, .9, .6);
       beamMats[i].opacity = .14 + kick * .14;
     });
-    laserG.rotation.y = Math.sin(t * .7) * .4;
-    lasers.forEach((l, i) => { l.piv.rotation.x = -.5 + Math.sin(t * 2 + i) * .2; l.mat.opacity = .35 + kick * .6; });
+    lasers.forEach((l, i) => {
+      l.piv.rotation.y = -l.side * (.15 + l.k * .22 + Math.sin(t * .8 + i) * .18);
+      l.piv.rotation.x = .12 + Math.sin(t * 1.6 + i) * .1;
+      l.mat.opacity = .35 + kick * .6;
+    });
     disco.rotation.y = t * 1.2;
     if (Math.floor(beat) !== lastBeat) {
       lastBeat = Math.floor(beat);
