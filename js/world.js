@@ -111,7 +111,8 @@ const tree = v => v
 const rock = (sc = 1) => xf(sph(.22, 6, 4, '#ABA49A'), { s: [sc, sc * .6, sc] });
 const tuft = () => [-.05, 0, .05].flatMap((x, i) => at(cyl(.035, 0, .16 + i * .03, 3, '#6FAE4E'), x, 0, (i - 1) * .03));
 const flower = c => [...cyl(.012, .012, .14, 3, '#5E9A45'), ...at(sph(.045, 5, 3, c), 0, .16, 0)];
-const crate = () => [...box(.36, .36, .36, '#B98552'), ...at(box(.38, .05, .38, '#9A6B3E'), 0, .31, 0), ...at(box(.38, .05, .38, '#9A6B3E'), 0, .02, 0)];
+// the bands stop short of the lid so no two faces share a plane (that made the top flicker)
+const crate = () => [...box(.36, .36, .36, '#B98552'), ...at(box(.38, .05, .38, '#9A6B3E'), 0, .27, 0), ...at(box(.38, .05, .38, '#9A6B3E'), 0, .04, 0)];
 const bench = () => [...box(.8, .05, .26, '#B98552'), ...at(box(.8, .2, .04, '#B98552'), 0, .18, -.12), ...[-.32, .32].flatMap(x => at(box(.05, .26, .22, '#5B4636'), x, -.26, 0))].map(f => ({ ...f, v: f.v.map(v => [v[0], v[1] + .26, v[2]]) }));
 const lantern = () => [...cyl(.03, .03, .7, 5, '#2C3047'), ...at(box(.12, .14, .12, '#FFE08A', 0, 1.3), 0, .7, 0), ...at(cyl(.1, 0, .08, 4, '#2C3047'), 0, .84, 0)];
 const fence = (len, n = 4) => {
