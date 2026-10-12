@@ -4,12 +4,24 @@ import * as THREE from 'three';
 export const ORDER = ['home', 'work', 'rally', 'ml', 'arcade', 'about', 'dj', 'contact'];
 export const NAMES = { home: 'Home', work: 'Work', rally: 'Rally', ml: 'ML Lab', arcade: 'Arcade', about: 'About', dj: 'DJ', contact: 'Contact' };
 // a loose archipelago: uneven gaps and heights, home closest to the hero camera
-export const W = { home: [4, 0, 44], work: [15.5, 2.4, 43], rally: [23, .2, 31], ml: [3, 2.2, 24], arcade: [15, 3.4, 20.5], about: [26, -1, 15], dj: [7.5, 4.6, 10], contact: [19, 1.2, 3] };
+// islands sit in the sea now: same scattered layout, all at sea level (grass ~.6 above the water)
+export const W = { home: [4, .5, 44], work: [15.5, .5, 43], rally: [23, .5, 31], ml: [3, .5, 24], arcade: [15, .5, 20.5], about: [26, .5, 15], dj: [7.5, .5, 10], contact: [19, .5, 3] };
 export const TOP = { home: 2.2, work: 2.6, rally: 1.9, ml: 2.1, arcade: 2.6, about: 2.4, dj: 3.1, contact: 1.8 };
-// camera yaw each island is viewed from (picked for a clear line of sight), and the local angle its objects look best from;
-// the island is rotated so the camera always sees that best side
-export const CAM = { work: .5, rally: .15, ml: -.3, arcade: .4, about: 1.1, dj: -1.1, contact: .9 };
-const NICE = { work: .5, rally: .15, ml: -.3, arcade: .4, about: -.7, dj: .35, contact: -.4 };
+// camera yaw per island, filled by buildWorld once it knows where each island's pier points
+export const CAM = {};
+// the local angle each island's objects look best from
+const NICE = { home: 0, work: .5, rally: .15, ml: -.3, arcade: .4, about: -.7, dj: .35, contact: -.4 };
+// main objects per island (local x, z, radius): the pier must keep clear of these
+const KEEP = {
+  home: [[0, -.2, 1.3], [1.45, .55, .3], [.95, 1.0, .25], [-1.5, 1.45, .9], [-1.35, -.75, .5]],
+  work: [[-.4, -.3, .6], [1.05, .55, .6], [1.1, -.9, .45], [-1.3, .95, .5]],
+  rally: [[0, 0, 2.35]],
+  ml: [[-.6, .3, .75], [.95, -.45, .5], [-.9, -1.1, .45]],
+  arcade: [[-.4, 0, .6], [.95, .6, .55], [1.1, -.6, .3], [-1.3, -.7, .35]],
+  about: [[-1.0, -.3, 1.15], [1.1, -.7, 1.0], [.35, .9, .5], [-.75, 1.2, .75]],
+  dj: [[0, -.75, 1.75], [0, 1.35, 1.45], [-1.95, -.55, .55], [1.95, -.55, .55]],
+  contact: [[-.2, .1, .45], [1.0, -.5, .55]]
+};
 export const R = { home: 3, work: 2.5, rally: 3.3, ml: 2.6, arcade: 2.6, about: 3.1, dj: 3.2, contact: 2.2 };
 
 // ---- face-list primitives (each face: polygon verts, hex color, center, two-sided flag, brightness k)
@@ -62,8 +74,8 @@ const islandFaces = (r, seed) => {
   const band = (A, B, c, kf) => { for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push(F([A[i], A[j], B[j], B[i]], c, o, 0, kf())); } };
   for (let i = 0; i < n; i++) fs.push(F([T[0][0], T[1][i], T[1][(i + 1) % n]], '#8CC86A', o, 0, .94 + rnd() * .12));
   for (let q = 1; q < 4; q++) band(T[q], T[q + 1], q === 3 ? '#7DBA5C' : '#8CC86A', () => .92 + rnd() * .16);
-  band(T[4], D[0], '#C99764', () => 1);
-  band(D[0], D[1], '#DDB07C', () => 1);
+  band(T[4], D[0], '#EAD5A4', () => 1);
+  band(D[0], D[1], '#E2C58E', () => 1);
   band(D[1], D[2], '#9C8676', () => .97);
   band(D[2], D[3], '#9C8676', () => .88);
   for (let i = 0; i < n; i++) fs.push(F([D[3][i], D[3][(i + 1) % n], tip], '#8B7667', o, 0, .85));
@@ -328,7 +340,7 @@ export function buildWorld(scene, acc) {
     const root = node(scene, { p: W[id] });
     root.userData.id = id;
     root.add(toMesh([...islandFaces(R[id], seed), ...decor(R[id], seed, avoid)]));
-    roots[id] = root; bobbers.push([root, W[id][1]]);
+    roots[id] = root;
     return root;
   };
   // an explodable model: one mesh per part; parts may also be ready-made Object3Ds (animated pivots)
@@ -564,17 +576,135 @@ export function buildWorld(scene, acc) {
     });
   });
 
-  for (const id in CAM) roots[id].rotation.y = CAM[id] - NICE[id];
+  // ---- the sea. Each island gets a pier pointing toward its neighbours (so the sailing route stays short and
+  // clear); the island is turned so the pier misses its main objects, and the camera looks in from beside the pier.
+  const V3 = THREE.Vector3, n = ORDER.length, flat = id => new V3(W[id][0], 0, W[id][2]);
+  const omega = ORDER.map((id, i) => {
+    const nb = [ORDER[i - 1], ORDER[i + 1]].filter(Boolean).map(flat);
+    return nb.reduce((a, q) => a.add(q), new V3()).divideScalar(nb.length).sub(flat(id)).normalize();
+  });
+  ORDER.forEach((id, i) => {
+    const w = Math.atan2(omega[i].x, omega[i].z);
+    let best = null;
+    for (let k = 0; k < 72; k++) {
+      const phi = k / 72 * Math.PI * 2, ux = Math.sin(phi), uz = Math.cos(phi);
+      const clear = Math.min(...KEEP[id].map(([x, z, r]) => Math.max(R[id] - .4 - (x * ux + z * uz + r), Math.abs(x * uz - z * ux) - (r + .6))));
+      for (const side of [-1, 1]) for (const d of [.7, 1.0, 1.3]) {
+        const cy = w + side * d, dist = 9.5 + R[id] * 2.1, cam = flat(id).add(new V3(Math.sin(cy) * dist, 0, Math.cos(cy) * dist));
+        let sight = 0;
+        for (const o of ORDER) if (o !== id) {
+          const c = flat(o), seg = flat(id).sub(cam), t = Math.max(0, Math.min(1, c.clone().sub(cam).dot(seg) / seg.lengthSq()));
+          if (cam.clone().addScaledVector(seg, t).distanceTo(c) < R[o] + 1) sight += 5;
+        }
+        let a = phi + side * d - NICE[id]; a = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
+        const score = (clear >= 0 ? 0 : 10 - clear * 5) + sight + a;
+        if (!best || score < best.score) best = { score, phi, cy };
+      }
+    }
+    roots[id].rotation.y = w - best.phi;
+    if (i) CAM[id] = best.cy;
+  });
+  const docks = ORDER.map((id, i) => flat(id).addScaledVector(omega[i], R[id] + 2.3));
 
-  // little filler islets between the big ones
-  [[10, -1.2, 33.5, 1.3, 1], [10, 1, 40, .9, 1], [27, 3, 25, 1.1, 0], [-1, 4, 33, .8, 1], [19, -2.5, 12, 1.0, 0], [12, 6, 26, .7, 1], [28, 1.5, 6, .9, 1], [1, -1, 13, 1.1, 0], [14, 4.5, 36, .6, 0]]
-    .forEach(([x, y, z, r, kind], i) => {
-      const g = node(scene, { p: [x, y, z] }, toMesh([...islandFaces(r, 300 + i), ...decor(r, 300 + i, [[0, 0, .4]]), ...(kind ? at(tree(1), 0, .08, 0) : at(rock(1.2), 0, .08, 0))]));
-      bobbers.push([g, y]);
-    });
+  // a box oriented along direction T (sideways S)
+  const obox = (c, T, S, lt, ls, h, color, k) => {
+    const q = (a, b, y) => [c.x + T.x * a + S.x * b, c.y + y, c.z + T.z * a + S.z * b], A = lt / 2, B = ls / 2;
+    const v = [q(-A, -B, 0), q(A, -B, 0), q(A, B, 0), q(-A, B, 0), q(-A, -B, h), q(A, -B, h), q(A, B, h), q(-A, B, h)];
+    return [[4, 5, 6, 7], [0, 1, 2, 3], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]].map(f => F(f.map(i => v[i]), color, [c.x, c.y + h / 2, c.z], 0, k));
+  };
+  // wooden piers with posts down into the water and a lantern at the end
+  const pierFaces = [];
+  ORDER.forEach((id, i) => {
+    const T = omega[i], S = new V3(T.z, 0, -T.x), from = R[id] - .5, to = R[id] + 1.9;
+    for (let d = from, k = 0; d < to; d += .32, k++) pierFaces.push(...obox(flat(id).addScaledVector(T, d + .16).setY(.42), T, S, .3, 1.0, .07, '#B98552', k % 2 ? .93 : 1.05));
+    for (let d = from + .6; d < to; d += .8) for (const e of [-.45, .45]) pierFaces.push(...obox(flat(id).addScaledVector(T, d).addScaledVector(S, e).setY(-.8), T, S, .09, .09, 1.35, '#7A5444'));
+    const end = flat(id).addScaledVector(T, to - .15);
+    pierFaces.push(...obox(end.clone().addScaledVector(S, .42).setY(.49), T, S, .05, .05, .7, '#2C3047'), ...obox(end.clone().addScaledVector(S, .42).setY(1.19), T, S, .14, .14, .16, '#FFE08A', 1.3));
+    for (const e of [-.42, .42]) pierFaces.push(...obox(end.clone().addScaledVector(T, -.5).addScaledVector(S, e).setY(.49), T, S, .1, .1, .12, '#2C3047'));
+  });
+  scene.add(toMesh(pierFaces));
+  // props standing where a pier now runs are removed (main objects were kept clear when turning the island)
+  scene.updateMatrixWorld(true);
+  ORDER.forEach((id, i) => [...roots[id].children].slice(1).forEach(ch => {
+    if (ch.userData.explode !== undefined) return;
+    const w = ch.getWorldPosition(new V3()), rel = new V3(w.x, 0, w.z).sub(flat(id)), along = rel.dot(omega[i]), across = Math.abs(rel.dot(new V3(omega[i].z, 0, -omega[i].x)));
+    if (w.y - W[id][1] < 1.5 && along > R[id] - 1.2 && across < .9) ch.removeFromParent();
+  }));
 
-  // clouds drifting between the islands
-  const clouds = [[-1, -1.6, 40, 1.4], [28, -1.2, 37, 1.1], [11, 2.2, 28, 1], [30, -1.5, 9, 1.2], [-4, 2.6, 18, .9], [12, 3.5, 2, .8], [22, 1, 47, 1.3], [0, -1, 6, 1.2], [17, -3, 15, 1.5], [7, -2.4, 50, 1.1], [32, 3.5, 22, .9], [-3, -2, 28, 1.2]]
+  // animated low-poly water
+  const wave = (x, z, t) => .14 * Math.sin(x * .32 + t * 1.1) + .1 * Math.cos(z * .27 - t * .9) + .05 * Math.sin((x + z) * .6 + t * 1.7);
+  const seaGeo = new THREE.PlaneGeometry(320, 320, 110, 110).rotateX(-Math.PI / 2).toNonIndexed();
+  const sp = seaGeo.attributes.position, base = Float32Array.from(sp.array);
+  const sea = new THREE.Mesh(seaGeo, new THREE.MeshStandardMaterial({ color: '#8FD3EA', flatShading: true, roughness: .3, metalness: .05, transparent: true, opacity: .92 }));
+  sea.position.set(15, 0, 24); sea.receiveShadow = true; scene.add(sea);
+  // surf around every island
+  const surf = ORDER.map((id, i) => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(R[id] * .97, R[id] * 1.16, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: .55, depthWrite: false }));
+    m.position.set(W[id][0], .09, W[id][2]); scene.add(m); return m;
+  });
+  tickers.push(t => {
+    for (let k = 0; k < sp.count; k++) sp.array[k * 3 + 1] = wave(base[k * 3] + 15, base[k * 3 + 2] + 24, t);
+    sp.needsUpdate = true;
+    surf.forEach((m, i) => { const p = (t * .35 + i * .3) % 1; m.scale.setScalar(1 + p * .12); m.material.opacity = .55 * (1 - p); });
+  });
+
+  // ---- boats: a little sailboat for you, a fishing boat cruising round the archipelago
+  const hull = [[0, 1.25], [.42, .6], [.5, -.3], [.42, -.95], [-.42, -.95], [-.5, -.3], [-.42, .6]];
+  const boatFaces = (stripe, sail) => {
+    const ring = (y, sx, sz) => hull.map(([x, z]) => [x * sx, y, z * sz]), top = ring(.45, 1, 1), mid = ring(.3, .93, .97), bot = ring(-.05, .55, .85), fs = [];
+    for (let k = 0; k < hull.length; k++) {
+      const j = (k + 1) % hull.length;
+      fs.push(F([top[k], top[j], mid[j], mid[k]], stripe, [0, .2, 0]), F([mid[k], mid[j], bot[j], bot[k]], '#F6F2EA', [0, .2, 0]));
+    }
+    fs.push(F(top, '#C99764', [0, 0, 0], 0, 1.05), F(bot, '#2C3047', [0, 1, 0]));
+    fs.push(...at(box(.55, .35, .5, '#F6F2EA'), 0, .45, -.4), ...at(box(.62, .06, .58, stripe), 0, .8, -.4), ...at(box(.56, .12, .02, '#9FD6EA', 0, 1.1), 0, .58, -.14));
+    if (sail) fs.push(...at(cyl(.03, .03, 2.0, 6, '#8A5A3B'), 0, .45, .3), F([[0, .75, .33], [0, 2.35, .33], [0, .75, 1.2]], '#FFFFFF', [1, 0, 0], 1, 1.05),
+      F([[0, 2.45, .3], [0, 2.3, .3], [0, 2.38, -.1]], stripe, [1, 0, 0], 1));
+    else fs.push(...at(cyl(.07, .09, .4, 8, '#2C3047'), 0, .86, -.4), ...at(box(.04, .9, .04, '#8A5A3B'), 0, .45, .5), ...at(box(.7, .03, .03, '#8A5A3B'), 0, 1.25, .5));
+    return fs;
+  };
+  const mine = node(scene, {}, toMesh(boatFaces(acc, true))), fisher = node(scene, { s: .8 }, toMesh(boatFaces('#5B8CFF', false)));
+  const legs = ORDER.slice(0, -1).map((_, i) => new THREE.CubicBezierCurve3(docks[i], docks[i].clone().addScaledVector(omega[i], 3.5), docks[i + 1].clone().addScaledVector(omega[i + 1], 3.5), docks[i + 1]));
+  const loop = new THREE.CatmullRomCurve3(Array.from({ length: 16 }, (_, k) => { const a = k / 16 * Math.PI * 2; return new V3(15 + Math.cos(a) * 20, 0, 24 + Math.sin(a) * 28); }), true);
+  const boat = { pos: new V3(), dir: new V3(0, 0, 1), leg: 0, e: 0, setLeg: (i, e) => { boat.leg = i; boat.e = e; } };
+  // foam wake
+  const foamGeo = new THREE.CircleGeometry(.3, 8).rotateX(-Math.PI / 2);
+  const foam = Array.from({ length: 40 }, () => { const m = new THREE.Mesh(foamGeo, new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0, depthWrite: false })); scene.add(m); return m; });
+  let foamIdx = 0, lastFoam = 0, lastBT = 0, fisherU = 0; const lastMine = new V3();
+  const float = (g, P, D, t, roll) => {
+    g.position.set(P.x, wave(P.x, P.z, t) - .02, P.z);
+    g.rotation.order = 'YXZ';
+    g.rotation.set((wave(P.x + D.x, P.z + D.z, t) - wave(P.x - D.x, P.z - D.z, t)) * -.6, Math.atan2(D.x, D.z), Math.sin(t * 1.3 + roll) * .06);
+  };
+  const wake = (g, D) => {
+    const m = foam[foamIdx++ % foam.length];
+    m.position.copy(g.position).addScaledVector(D, -.9).setY(g.position.y + .08); m.scale.setScalar(.5); m.material.opacity = .55;
+  };
+  tickers.push(t => {
+    const dt = Math.min(.05, Math.max(0, t - lastBT)); lastBT = t;
+    const leg = legs[boat.leg], u = Math.min(1, Math.max(0, boat.e));
+    boat.pos.copy(leg.getPointAt(u)); boat.dir.copy(leg.getTangentAt(u)).setY(0).normalize();
+    float(mine, boat.pos, boat.dir, t, 0);
+    fisherU = (fisherU + dt * 2 / loop.getLength()) % 1;
+    const fp = loop.getPointAt(fisherU), fd = loop.getTangentAt(fisherU).setY(0).normalize();
+    float(fisher, fp, fd, t, 2);
+    if (t - lastFoam > .1) {
+      lastFoam = t;
+      wake(fisher, fd);
+      if (mine.position.distanceTo(lastMine) > .05) wake(mine, boat.dir); // only while actually sailing
+      lastMine.copy(mine.position);
+    }
+    foam.forEach(m => { m.scale.multiplyScalar(1 + dt * 1.4); m.material.opacity *= 1 - dt * 1.2; });
+  });
+
+  // rocky islets with a palm or a rock, kept off the sailing routes
+  const routeAt = legs.flatMap(l => l.getSpacedPoints(30));
+  [[10, 33.5, 1.3, 1], [10, 40, .9, 1], [27, 25, 1.1, 0], [-1, 33, .8, 1], [12, 26, .7, 1], [28, 6, .9, 1], [1, 13, 1.1, 0], [14, 36, .6, 0], [31, 36, 1.2, 1], [-4, 8, 1.0, 1]]
+    .filter(([x, z, r]) => routeAt.every(q => Math.hypot(q.x - x, q.z - z) > r + 1.8))
+    .forEach(([x, z, r, kind], i) => node(scene, { p: [x, .35, z] }, toMesh([...islandFaces(r, 300 + i), ...decor(r, 300 + i, [[0, 0, .4]]), ...(kind ? at(tree(1), 0, .08, 0) : at(rock(1.2), 0, .08, 0))])));
+
+  // clouds drifting high above the sea
+  const clouds = [[-1, 7, 40, 1.4], [28, 8, 37, 1.1], [11, 9, 28, 1], [30, 7, 9, 1.2], [-4, 8.5, 18, .9], [12, 9.5, 2, .8], [22, 7.5, 47, 1.3], [0, 8, 6, 1.2], [17, 8.5, 15, 1.5], [7, 7, 50, 1.1], [32, 9, 22, .9], [-3, 7.5, 28, 1.2]]
     .map(([x, y, z, s]) => { const c = node(scene, { p: [x, y, z], s }, toMesh(cloudFaces())); c.userData.x0 = x; return c; });
   tickers.push(t => clouds.forEach((c, i) => { c.position.x = c.userData.x0 + Math.sin(t * .05 + i) * 1.5; }));
 
@@ -587,5 +717,5 @@ export function buildWorld(scene, acc) {
   // every island bobs gently
   tickers.push(t => bobbers.forEach(([g, y], i) => { g.position.y = y + Math.sin(t * .8 + i * 1.3) * .12; }));
 
-  return { roots, labels, explodables, plane, update: t => tickers.forEach(f => f(t)) };
+  return { roots, labels, explodables, plane, boat, update: t => tickers.forEach(f => f(t)) };
 }

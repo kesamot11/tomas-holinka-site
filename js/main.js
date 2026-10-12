@@ -32,7 +32,7 @@ const YAW = CAM;
 const ZOOM = { dj: .62 }, LIFT = { dj: 2.6 }; // the party gets a closer look, from above the crowd
 const V = (...a) => new THREE.Vector3(...a);
 function pose(i) {
-  if (i === 0) { const T = V(1, -1, 21); return { T, C: T.clone().add(V(0, 38, 70)) }; }
+  if (i === 0) { const T = V(-1, 2, 18); return { T, C: T.clone().add(V(0, 24, 74)) }; }
   const id = ORDER[i], yaw = YAW[id];
   const dir = V(Math.sin(yaw), 0, Math.cos(yaw)), right = V(Math.cos(yaw), 0, -Math.sin(yaw));
   const T = V(...W[id]).add(V(0, 1, 0)).addScaledVector(right, (i % 2 ? 3.3 : -3.3) * (ZOOM[ORDER[i]] || 1));
@@ -61,17 +61,18 @@ function steerPlane(follow) {
   prevPlane.copy(pl.position);
 }
 
-// scroll mode: camera hops island to island; the plane circles the island you're on
-function placeCamera(t) {
+// scroll mode: your boat sails from pier to pier and the camera swings in behind it on the way
+function placeCamera() {
   const i = Math.min(Math.floor(rig.p), N - 2), e = easeSeg(rig.p - i), a = poses[i], b = poses[i + 1];
-  const arc = Math.sin(Math.PI * e), hop = a.T.distanceTo(b.T);
-  T.lerpVectors(a.T, b.T, e); T.y += arc * .8;
-  C.lerpVectors(a.C, b.C, e); C.y += arc * (2 + hop * .18);
+  const arc = Math.sin(Math.PI * e), boat = world.boat;
+  boat.setLeg(i, e);
+  const follow = smooth(0, 1, arc * 1.6);
+  const chase = boat.pos.clone().addScaledVector(boat.dir, -9.5).add(V(0, 4.2, 0)).addScaledVector(V(boat.dir.z, 0, -boat.dir.x), 3);
+  T.lerpVectors(a.T, b.T, e).lerp(boat.pos, follow * .9);
+  C.lerpVectors(a.C, b.C, e).lerp(chase, follow);
   camera.position.copy(C);
   camera.lookAt(T);
-  const wa = V(...W[ORDER[i]]), wb = V(...W[ORDER[i + 1]]), rest = 1 - arc, ca = t * .55;
-  planePos.lerpVectors(wa, wb, e).add(V(Math.cos(ca) * 4.2 * rest, 3.8 + arc * 2.5 + Math.sin(t * 1.1) * .2, Math.sin(ca) * 4.2 * rest));
-  steerPlane(true);
+  world.plane.visible = false;
   return Math.round(rig.p);
 }
 
@@ -90,6 +91,7 @@ function flyCamera() {
   camera.position.copy(C);
   camera.lookAt(T);
   steerPlane(false);
+  world.plane.scale.setScalar(.6 * smooth(0, .1, k) * (1 - smooth(.9, 1, k)));
   spawnPuff(k);
   return tv.i;
 }
@@ -161,19 +163,18 @@ function travel(i) {
   Object.assign(tv, { active: true, i, k: 0 });
   lastPuffK = 0;
   tv.fromC.copy(camera.position); tv.fromT.copy(T);
-  tv.a.copy(world.plane.position);
+  tv.a.copy(world.boat.pos).add(V(0, 1.5, 0));
   const d = tv.a.distanceTo(V(...W[ORDER[i]])), dur = reduced ? 1 : 1500 + d * 32;
-  // land exactly where the idle orbit will be at arrival, so the plane flies straight into its circle
-  const tEnd = clock.getElapsedTime() + dur / 1000, ca = tEnd * .55;
-  tv.b.set(...W[ORDER[i]]).add(V(Math.cos(ca) * 4.2, 3.8 + Math.sin(tEnd * 1.1) * .2, Math.sin(ca) * 4.2));
+  tv.b.set(...W[ORDER[i]]).add(V(0, 3.5, 0));
   tv.m.lerpVectors(tv.a, tv.b, .5).add(V(0, 3 + d * .3, 0));
+  world.plane.visible = true; world.plane.position.copy(tv.a); prevPlane.copy(tv.a);
   bannerName.textContent = `0${i + 1} ${NAMES[ORDER[i]]}`;
   document.body.classList.add('travelling');
   setTimeout(() => scrollTo({ top: i * innerHeight, behavior: 'instant' }), 300);
   let shown = false;
   animate(tv, {
     k: 1, duration: dur, ease: 'inOutSine',
-    onUpdate: () => { if (!shown && tv.k > .85) { shown = true; document.body.classList.remove('travelling'); reveal(panels[i]); } },
+    onUpdate: () => { if (tv.k > .5) world.boat.setLeg(Math.min(i, N - 2), i === N - 1 ? 1 : 0); if (!shown && tv.k > .85) { shown = true; document.body.classList.remove('travelling'); reveal(panels[i]); } },
     onComplete: () => { rig.p = i; tv.active = false; }
   });
 }
@@ -284,7 +285,7 @@ renderer.setAnimationLoop(() => {
   world.update(reduced ? 0 : t);
   const dt = Math.min(.05, t - lastT); lastT = t;
   if (!tv.active) rig.p += (Math.min(N - 1, scrollY / innerHeight) - rig.p) * Math.min(1, dt * 7);
-  const cur = tv.active ? flyCamera() : placeCamera(t);
+  const cur = tv.active ? flyCamera() : placeCamera();
   fadePuffs();
   pick(cur);
   updateLabels(t, cur);
