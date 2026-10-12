@@ -3,13 +3,27 @@ import * as THREE from 'three';
 
 export const ORDER = ['home', 'work', 'rally', 'ml', 'arcade', 'about', 'dj', 'contact'];
 export const NAMES = { home: 'Home', work: 'Work', rally: 'Rally', ml: 'ML Lab', arcade: 'Arcade', about: 'About', dj: 'DJ', contact: 'Contact' };
-// a loose archipelago: uneven gaps and heights, home closest to the hero camera
-export const W = { home: [4, 0, 44], work: [15.5, 2.4, 43], rally: [23, .2, 31], ml: [3, 2.2, 24], arcade: [15, 3.4, 20.5], about: [26, -1, 15], dj: [7.5, 4.6, 10], contact: [19, 1.2, 3] };
+// islands sit on a ring so one closed, double-track railway can loop past every island
+const RING = { c: [14, 0, 24], a: 12.5, b: 17 };
+const RING_Y = { home: 0, work: 1.0, rally: .3, ml: 1.6, arcade: .8, about: -.3, dj: .5, contact: -.2 };
+const theta = i => Math.PI / 2 + i * Math.PI * 2 / ORDER.length;
+export const W = Object.fromEntries(ORDER.map((id, i) => [id, [RING.c[0] + RING.a * Math.cos(theta(i)), RING_Y[id], RING.c[2] + RING.b * Math.sin(theta(i))]]));
 export const TOP = { home: 2.2, work: 2.6, rally: 1.9, ml: 2.1, arcade: 2.6, about: 2.4, dj: 3.1, contact: 1.8 };
-// camera yaw each island is viewed from (picked for a clear line of sight), and the local angle its objects look best from;
-// the island is rotated so the camera always sees that best side
-export const CAM = { work: .5, rally: .15, ml: -.3, arcade: .4, about: 1.1, dj: -1.1, contact: .9 };
-const NICE = { work: .5, rally: .15, ml: -.3, arcade: .4, about: -.7, dj: .35, contact: -.4 };
+// camera yaw per island, filled by buildWorld once it knows which side the railway passes on
+export const CAM = {};
+// the local angle each island's objects look best from
+const NICE = { home: 0, work: .5, rally: .15, ml: -.3, arcade: .4, about: -.7, dj: .35, contact: -.4 };
+// main objects per island (local x, z, radius): the railway must keep clear of these
+const KEEP = {
+  home: [[0, -.2, 1.3], [1.45, .55, .3], [.95, 1.0, .25], [-1.5, 1.45, .9], [-1.35, -.75, .5]],
+  work: [[-.4, -.3, .6], [1.05, .55, .6], [1.1, -.9, .45], [-1.3, .95, .5]],
+  rally: [[0, 0, 2.35]],
+  ml: [[-.6, .3, .75], [.95, -.45, .5], [-.9, -1.1, .45]],
+  arcade: [[-.4, 0, .6], [.95, .6, .55], [1.1, -.6, .3], [-1.3, -.7, .35]],
+  about: [[-1.0, -.3, 1.15], [1.1, -.7, 1.0], [.35, .9, .5], [-.75, 1.2, .75]],
+  dj: [[0, -.75, 1.75], [0, 1.35, 1.45], [-1.95, -.55, .55], [1.95, -.55, .55]],
+  contact: [[-.2, .1, .45], [1.0, -.5, .55]]
+};
 export const R = { home: 3, work: 2.5, rally: 3.3, ml: 2.6, arcade: 2.6, about: 3.1, dj: 3.2, contact: 2.2 };
 
 // ---- face-list primitives (each face: polygon verts, hex color, center, two-sided flag, brightness k)
@@ -328,7 +342,7 @@ export function buildWorld(scene, acc) {
     const root = node(scene, { p: W[id] });
     root.userData.id = id;
     root.add(toMesh([...islandFaces(R[id], seed), ...decor(R[id], seed, avoid)]));
-    roots[id] = root; bobbers.push([root, W[id][1]]);
+    roots[id] = root;
     return root;
   };
   // an explodable model: one mesh per part; parts may also be ready-made Object3Ds (animated pivots)
@@ -564,17 +578,121 @@ export function buildWorld(scene, acc) {
     });
   });
 
-  for (const id in CAM) roots[id].rotation.y = CAM[id] - NICE[id];
+  // ---- railway. Pick the side of each island the track passes on (clear of its main objects, and so the
+  // camera, which looks in from outside the ring, sees the island's best side), then rotate the island to match.
+  const V3 = THREE.Vector3, UP = new V3(0, 1, 0);
+  const stations = ORDER.map((id, i) => {
+    const th = theta(i), n = new V3(RING.b * Math.cos(th), 0, RING.a * Math.sin(th)).normalize(), out = Math.atan2(n.x, n.z);
+    let best = null;
+    for (let k = 0; k < 72; k++) {
+      const phi = k / 72 * Math.PI * 2, ux = Math.sin(phi), uz = Math.cos(phi);
+      const clear = R[id] - .7 - Math.max(...KEEP[id].map(([x, z, r]) => x * ux + z * uz + r));
+      for (const side of [-1, 1]) {
+        let d = phi + side * .75 - NICE[id]; d = Math.abs(Math.atan2(Math.sin(d), Math.cos(d)));
+        const score = (clear >= 0 ? 0 : 10 - clear * 5) + d;
+        if (!best || score < best.score) best = { score, phi, side };
+      }
+    }
+    roots[id].rotation.y = out - best.phi;
+    CAM[id] = out + best.side * .75;
+    return new V3(...W[id]).addScaledVector(n, R[id] + .55).setY(W[id][1] + .1);
+  });
+  const curve = new THREE.CatmullRomCurve3(stations, true, 'catmullrom', .5);
+  const L = curve.getLength(), M = Math.round(L / .26);
+  const samples = Array.from({ length: M + 1 }, (_, k) => {
+    const u = k / M, P = curve.getPointAt(u), T = curve.getTangentAt(u);
+    return { P, T, S: new V3().crossVectors(T, UP).normalize(), island: ORDER.some(id => Math.hypot(P.x - W[id][0], P.z - W[id][2]) < R[id] + .1) };
+  });
+  // arc-length position of each station on the loop
+  const uS = stations.map(st => { let bi = 0, bd = 1e9; for (let k = 0; k <= 2000; k++) { const d = curve.getPointAt(k / 2000).distanceToSquared(st); if (d < bd) { bd = d; bi = k; } } return bi / 2000; });
 
-  // little filler islets between the big ones
-  [[10, -1.2, 33.5, 1.3, 1], [10, 1, 40, .9, 1], [27, 3, 25, 1.1, 0], [-1, 4, 33, .8, 1], [19, -2.5, 12, 1.0, 0], [12, 6, 26, .7, 1], [28, 1.5, 6, .9, 1], [1, -1, 13, 1.1, 0], [14, 4.5, 36, .6, 0]]
+  // a box oriented along the track: centre c, along-track T, sideways S
+  const obox = (c, T, S, lt, ls, h, color, k) => {
+    const q = (a, b, y) => [c.x + T.x * a + S.x * b, c.y + y, c.z + T.z * a + S.z * b], A = lt / 2, B = ls / 2;
+    const v = [q(-A, -B, 0), q(A, -B, 0), q(A, B, 0), q(-A, B, 0), q(-A, -B, h), q(A, -B, h), q(A, B, h), q(-A, B, h)];
+    return [[4, 5, 6, 7], [0, 1, 2, 3], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]].map(f => F(f.map(i => v[i]), color, [c.x, c.y + h / 2, c.z], 0, k));
+  };
+  const rail = [];
+  for (let k = 0; k < M; k++) {
+    const a = samples[k], b = samples[k + 1], mid = a.P.clone().lerp(b.P, .5), seg = a.P.distanceTo(b.P), T = b.P.clone().sub(a.P).normalize(), S = a.S;
+    if (!a.island) rail.push(...obox(mid.clone().setY(mid.y - .13), T, S, seg + .02, 2.5, .12, '#B98552', k % 2 ? .93 : 1.04));
+    for (const off of [-.6, .6]) {
+      if (k % 2 === 0) rail.push(...obox(mid.clone().addScaledVector(S, off), T, S, .14, .9, .05, '#7A5444'));
+      for (const r of [-.3, .3]) rail.push(...obox(mid.clone().addScaledVector(S, off + r).setY(mid.y + .05), T, S, seg + .01, .06, .07, '#9AA0B5', 1.05));
+    }
+    if (!a.island) for (const e of [-1.22, 1.22]) {
+      rail.push(...obox(mid.clone().addScaledVector(S, e).setY(mid.y + .38), T, S, seg + .01, .05, .05, '#8A5A3B'));
+      if (k % 4 === 0) rail.push(...obox(a.P.clone().addScaledVector(S, e).setY(a.P.y - .02), T, S, .07, .07, .42, '#8A5A3B'));
+    }
+    if (!a.island && k % 9 === 0) rail.push(...obox(mid.clone().setY(mid.y - .5), T, S, .2, 2.3, .4, '#7A5444', .85));
+  }
+  // a little sky station hanging off the outside of the track at every island
+  stations.forEach((st, i) => {
+    const u = uS[i], P = curve.getPointAt(u), T = curve.getTangentAt(u), S = new V3().crossVectors(T, UP).normalize();
+    const outward = S.dot(new V3(...W[ORDER[i]]).sub(P)) > 0 ? S.clone().negate() : S;
+    const c = P.clone().addScaledVector(outward, 1.75).setY(P.y - .12);
+    rail.push(...obox(c, T, outward, 2.6, 1.0, .14, '#D8D0C2'));
+    for (const a of [-1.1, 1.1]) rail.push(...obox(c.clone().addScaledVector(T, a).addScaledVector(outward, .38).setY(c.y + .14), T, outward, .08, .08, .95, '#2C3047'));
+    rail.push(...obox(c.clone().addScaledVector(outward, .2).setY(c.y + 1.09), T, outward, 2.8, .8, .08, '#E0623F'));
+    rail.push(...obox(c.clone().addScaledVector(outward, .3).setY(c.y + .14), T, outward, 1.0, .3, .22, '#B98552'));
+    rail.push(...obox(c.clone().addScaledVector(T, -1.55).setY(c.y + .14), T, outward, .06, .06, 1.15, '#2C3047'), ...obox(c.clone().addScaledVector(T, -1.55).setY(c.y + 1.0), T, outward, .5, .06, .26, acc, 1.1));
+  });
+  const railMesh = toMesh(rail); railMesh.castShadow = false; scene.add(railMesh);
+
+  // props that ended up on the track get removed (main objects were kept clear when picking the side)
+  scene.updateMatrixWorld(true);
+  for (const id of ORDER) [...roots[id].children].slice(1).forEach(ch => {
+    if (ch.userData.explode !== undefined) return;
+    const w = ch.getWorldPosition(new V3());
+    if (w.y - W[id][1] < 1.5 && samples.some(sm => Math.hypot(sm.P.x - w.x, sm.P.z - w.z) < 1.45)) ch.removeFromParent();
+  });
+
+  // ---- trains: loco + two carriages, cars face +z so lookAt points them along the track
+  const wheels = zs => zs.flatMap(z => [-.34, .34].flatMap(x => at(xf(cyl(.14, .14, .07, 10, '#1D2033', '#9AA0B5'), { z: Math.PI / 2 }), x + (x > 0 ? .07 : 0), .14, z)));
+  const loco = (c1, c2) => toMesh([...at(box(.62, .12, 1.3, '#2C3047'), 0, .16, 0), ...at(xf(cyl(.27, .27, .8, 10, c1), { x: Math.PI / 2 }), 0, .55, -.15),
+    ...at(box(.66, .56, .46, c2), 0, .28, -.4), ...at(box(.66, .17, .2, '#9FD6EA', 0, 1.1), 0, .6, -.4), ...at(box(.76, .06, .58, '#2C3047'), 0, .84, -.4),
+    ...at(cyl(.08, .12, .3, 8, '#2C3047'), 0, .78, .45), ...at(box(.6, .1, .06, '#E0483B'), 0, .18, .68), ...at(cyl(.08, .08, .03, 8, '#FFE08A', 0, 1.3), 0, .55, .66), ...wheels([-.4, 0, .4])]);
+  const carriage = (c1, c2) => toMesh([...at(box(.62, .12, 1.4, '#2C3047'), 0, .16, 0), ...at(box(.68, .54, 1.36, c1), 0, .28, 0),
+    ...at(box(.7, .17, 1.1, '#9FD6EA', 0, 1.1), 0, .52, 0), ...at(box(.76, .08, 1.44, c2), 0, .82, 0), ...wheels([-.45, .45])]);
+  const makeTrain = (c1, c2) => [loco(c1, c2), carriage(c2, c1), carriage(c1, c2)].map(m => { const g = node(scene, {}, m); g.scale.setScalar(.9); return g; });
+  const place = (cars, u, off, dir) => cars.forEach((car, j) => {
+    const uj = ((u - dir * j * 1.45 / L) % 1 + 1) % 1, P = curve.getPointAt(uj), T = curve.getTangentAt(uj), S = new V3().crossVectors(T, UP).normalize();
+    car.position.copy(P).addScaledVector(S, off).setY(P.y + .07);
+    car.lookAt(car.position.clone().addScaledVector(T, dir));
+  });
+  const player = makeTrain(acc, '#F6F2EA'), other = makeTrain('#5B8CFF', '#FFC94A');
+  // steam puffs from both chimneys
+  const steam = Array.from({ length: 30 }, () => { const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: '#FFFFFF', flatShading: true, transparent: true, opacity: 0 })); m.scale.setScalar(.001); scene.add(m); return m; });
+  let steamIdx = 0, lastSteam = 0, otherU = .5, lastTT = 0, playerU = uS[0], lastPlayerU = uS[0];
+  const chimney = car => car.localToWorld(new V3(0, .95, .45));
+  const track = { uS, L, playerPos: new V3(), playerDir: new V3(0, 0, 1), setPlayer: u => { playerU = ((u % 1) + 1) % 1; } };
+  place(player, playerU, -.6, 1);
+  tickers.push(t => {
+    const dt = Math.min(.05, Math.max(0, t - lastTT)); lastTT = t;
+    otherU = (otherU - dt * 1.7 / L + 1) % 1;
+    place(other, otherU, .6, -1);
+    place(player, playerU, -.6, 1);
+    track.playerPos.copy(player[1].position); player[0].getWorldDirection(track.playerDir);
+    const moving = Math.abs(playerU - lastPlayerU) > 1e-5; lastPlayerU = playerU;
+    if (t - lastSteam > .14) {
+      lastSteam = t;
+      for (const src of moving ? [other[0], player[0]] : [other[0]]) {
+        const m = steam[steamIdx++ % steam.length];
+        m.position.copy(chimney(src)); m.scale.setScalar(.12); m.material.opacity = .85;
+      }
+    }
+    steam.forEach(m => { m.position.y += dt * .8; m.scale.multiplyScalar(1 + dt * 1.2); m.material.opacity *= 1 - dt * 1.6; });
+  });
+
+  // filler islets inside and around the ring
+  [[14, -1.5, 24, 1.6, 1], [11, 2.5, 18, .8, 1], [17.5, 1.5, 30, .9, 0], [-4, 1, 22, 1.0, 1], [32, 2, 26, .9, 1], [14, 3, 2, .9, 0], [-1, -1.5, 40, .8, 0], [30, -1, 42, 1.1, 1]]
     .forEach(([x, y, z, r, kind], i) => {
       const g = node(scene, { p: [x, y, z] }, toMesh([...islandFaces(r, 300 + i), ...decor(r, 300 + i, [[0, 0, .4]]), ...(kind ? at(tree(1), 0, .08, 0) : at(rock(1.2), 0, .08, 0))]));
       bobbers.push([g, y]);
     });
 
-  // clouds drifting between the islands
-  const clouds = [[-1, -1.6, 40, 1.4], [28, -1.2, 37, 1.1], [11, 2.2, 28, 1], [30, -1.5, 9, 1.2], [-4, 2.6, 18, .9], [12, 3.5, 2, .8], [22, 1, 47, 1.3], [0, -1, 6, 1.2], [17, -3, 15, 1.5], [7, -2.4, 50, 1.1], [32, 3.5, 22, .9], [-3, -2, 28, 1.2]]
+  // clouds drifting below and between the islands
+  const clouds = [[3, -2.6, 44, 1.4], [26, -2.2, 40, 1.1], [14, 1.2, 14, 1], [30, -2.5, 12, 1.2], [-5, 1.6, 30, .9], [8, 3.5, 4, .8], [22, -1, 47, 1.3], [-2, -2.5, 10, 1.2], [20, -3, 20, 1.5], [10, -3.4, 50, 1.1], [33, 3.5, 30, .9], [6, -2.8, 26, 1.2]]
     .map(([x, y, z, s]) => { const c = node(scene, { p: [x, y, z], s }, toMesh(cloudFaces())); c.userData.x0 = x; return c; });
   tickers.push(t => clouds.forEach((c, i) => { c.position.x = c.userData.x0 + Math.sin(t * .05 + i) * 1.5; }));
 
@@ -587,5 +705,5 @@ export function buildWorld(scene, acc) {
   // every island bobs gently
   tickers.push(t => bobbers.forEach(([g, y], i) => { g.position.y = y + Math.sin(t * .8 + i * 1.3) * .12; }));
 
-  return { roots, labels, explodables, plane, update: t => tickers.forEach(f => f(t)) };
+  return { roots, labels, explodables, plane, track, update: t => tickers.forEach(f => f(t)) };
 }
