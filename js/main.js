@@ -51,25 +51,29 @@ function pose(i) {
 }
 let poses = ORDER.map((_, i) => pose(i));
 
-// ---- orbit: drag sideways to circle the island you're on, but only as far as no other island blocks the view
-const UP = V(0, 1, 0), clamp = (x, a, b) => Math.min(b, Math.max(a, x));
-function orbitRange(i) {
-  if (i === 0) return [0, 0];
+// ---- orbit: drag sideways to circle the island you're on, all the way round. Wherever another island would
+// block the view, the camera rises just high enough to look over it (precomputed per island, every 5 degrees).
+const UP = V(0, 1, 0), clamp = (x, a, b) => Math.min(b, Math.max(a, x)), STEPS = 72;
+function orbitLift(i) {
+  if (i === 0) return new Array(STEPS).fill(0);
   const c = V(...W[ORDER[i]]), aim = c.clone().add(V(0, 1, 0)), base = poses[i].C.clone().sub(c);
-  const clear = d => {
-    const cam = base.clone().applyAxisAngle(UP, d).add(c), seg = aim.clone().sub(cam);
+  const clear = (d, h) => {
+    const cam = base.clone().applyAxisAngle(UP, d).add(c).add(V(0, h, 0)), seg = aim.clone().sub(cam);
     return ORDER.every(id => {
       if (id === ORDER[i]) return true;
       const o = V(...W[id]).add(V(0, .3, 0)), t = clamp(o.clone().sub(cam).dot(seg) / seg.lengthSq(), 0, 1);
-      return cam.clone().addScaledVector(seg, t).distanceTo(o) > R[id] + .6;
+      return cam.clone().addScaledVector(seg, t).distanceTo(o) > R[id] + .8;
     });
   };
-  let lo = 0, hi = 0;
-  while (hi < Math.PI && clear(hi + .05)) hi += .05;
-  while (lo > -Math.PI && clear(lo - .05)) lo -= .05;
-  return [lo, hi];
+  const raw = Array.from({ length: STEPS }, (_, k) => { let h = 0; while (h < 30 && !clear(k / STEPS * Math.PI * 2, h)) h += .5; return h; });
+  // widen each bump a little so the camera starts rising before the other island slides into view
+  return raw.map((_, k) => Math.max(...[-3, -2, -1, 0, 1, 2, 3].map(j => raw[(k + j + STEPS) % STEPS])));
 }
-let orbitRanges = ORDER.map((_, i) => orbitRange(i));
+let orbitLifts = ORDER.map((_, i) => orbitLift(i));
+const liftAt = (i, ang) => {
+  const x = ((ang / (Math.PI * 2)) % 1 + 1) % 1 * STEPS, k = Math.floor(x), f = x - k, L = orbitLifts[i];
+  return L[k % STEPS] * (1 - f) + L[(k + 1) % STEPS] * f;
+};
 const orbit = { off: 0, target: 0, island: 0 };
 const easeSeg = s => { s = Math.min(1, Math.max(0, (s - .12) / .76)); return s < .5 ? 4 * s * s * s : 1 - Math.pow(-2 * s + 2, 3) / 2; };
 
@@ -101,6 +105,7 @@ function placeCamera(t) {
   if (Math.abs(orbit.off) > 1e-4) {
     const c = V(...W[ORDER[orbit.island]]), ang = orbit.off * (1 - arc);
     C.sub(c).applyAxisAngle(UP, ang).add(c); T.sub(c).applyAxisAngle(UP, ang).add(c);
+    C.y += liftAt(orbit.island, orbit.off) * (1 - arc);
   }
   camera.position.copy(C);
   camera.lookAt(T);
@@ -291,8 +296,7 @@ addEventListener('pointermove', e => {
   if (!drag || e.pointerId !== drag.id) return;
   const dx = e.clientX - drag.x; drag.x = e.clientX;
   if (Math.abs(dx) > 0) dragged = dragged || Math.abs(dx) > 3;
-  const [lo, hi] = orbitRanges[orbit.island];
-  orbit.target = clamp(orbit.target - dx * (touch ? .012 : .008), lo, hi);
+  if (orbit.island) orbit.target -= dx * (touch ? .012 : .008);
 });
 addEventListener('pointerup', () => { drag = null; });
 addEventListener('pointercancel', () => { drag = null; });
@@ -338,7 +342,7 @@ if (!reduced) {
 function resize() {
   portrait = innerWidth < innerHeight;
   poses = ORDER.map((_, i) => pose(i));
-  orbitRanges = ORDER.map((_, i) => orbitRange(i));
+  orbitLifts = ORDER.map((_, i) => orbitLift(i));
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.fov = innerWidth / innerHeight < 1 ? 50 : 35;
@@ -355,7 +359,7 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(.05, t - lastT); lastT = t;
   if (!tv.active) rig.p += (Math.min(N - 1, scrollY / secH()) - rig.p) * Math.min(1, dt * 7);
   const near = Math.round(rig.p);
-  if (near !== orbit.island) { orbit.island = near; orbit.target = 0; } // a new island starts from its own angle
+  if (near !== orbit.island) { orbit.island = near; orbit.off = Math.atan2(Math.sin(orbit.off), Math.cos(orbit.off)); orbit.target = 0; } // a new island starts from its own angle
   orbit.off += (orbit.target - orbit.off) * Math.min(1, dt * 8);
   const cur = tv.active ? flyCamera() : placeCamera(t);
   fadePuffs();
