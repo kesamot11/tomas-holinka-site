@@ -33,6 +33,8 @@ const world = buildWorld(scene, ACC);
 // ---- camera poses: hero = map overview, then one pose per island from its own side
 const YAW = CAM;
 const ZOOM = { dj: .62 }, LIFT = { dj: 2.6 }; // the party gets a closer look, from above the crowd
+// phones: frame the whole stage above the card (it's tall, so aim higher and stand further back)
+const PORTRAIT_ZOOM = { dj: .95 }, PORTRAIT_AIM = { dj: -1.2 };
 const V = (...a) => new THREE.Vector3(...a);
 // on a phone held upright the text sits at the bottom, so islands are centred and framed in the top half
 let portrait = innerWidth < innerHeight;
@@ -43,11 +45,32 @@ function pose(i) {
   }
   const id = ORDER[i], yaw = YAW[id];
   const dir = V(Math.sin(yaw), 0, Math.cos(yaw)), right = V(Math.cos(yaw), 0, -Math.sin(yaw));
-  const z = (ZOOM[id] || 1) * (portrait ? 1.15 : 1);
-  const T = portrait ? V(...W[id]).add(V(0, -3.4, 0)) : V(...W[id]).add(V(0, 1, 0)).addScaledVector(right, (i % 2 ? 3.3 : -3.3) * (ZOOM[id] || 1));
+  const z = portrait ? (PORTRAIT_ZOOM[id] || 1.15) : (ZOOM[id] || 1);
+  const T = portrait ? V(...W[id]).add(V(0, PORTRAIT_AIM[id] ?? -3.4, 0)) : V(...W[id]).add(V(0, 1, 0)).addScaledVector(right, (i % 2 ? 3.3 : -3.3) * (ZOOM[id] || 1));
   return { T, C: T.clone().addScaledVector(dir, (9.5 + R[id] * 2.1) * z).add(V(0, (3.2 + R[id] * .75) * z + (LIFT[id] || 0), 0)) };
 }
 let poses = ORDER.map((_, i) => pose(i));
+
+// ---- orbit: drag sideways to circle the island you're on, but only as far as no other island blocks the view
+const UP = V(0, 1, 0), clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+function orbitRange(i) {
+  if (i === 0) return [0, 0];
+  const c = V(...W[ORDER[i]]), aim = c.clone().add(V(0, 1, 0)), base = poses[i].C.clone().sub(c);
+  const clear = d => {
+    const cam = base.clone().applyAxisAngle(UP, d).add(c), seg = aim.clone().sub(cam);
+    return ORDER.every(id => {
+      if (id === ORDER[i]) return true;
+      const o = V(...W[id]).add(V(0, .3, 0)), t = clamp(o.clone().sub(cam).dot(seg) / seg.lengthSq(), 0, 1);
+      return cam.clone().addScaledVector(seg, t).distanceTo(o) > R[id] + .6;
+    });
+  };
+  let lo = 0, hi = 0;
+  while (hi < Math.PI && clear(hi + .05)) hi += .05;
+  while (lo > -Math.PI && clear(lo - .05)) lo -= .05;
+  return [lo, hi];
+}
+let orbitRanges = ORDER.map((_, i) => orbitRange(i));
+const orbit = { off: 0, target: 0, island: 0 };
 const easeSeg = s => { s = Math.min(1, Math.max(0, (s - .12) / .76)); return s < .5 ? 4 * s * s * s : 1 - Math.pow(-2 * s + 2, 3) / 2; };
 
 // rig.p: 0..N-1 scroll position in "islands"; smoothed in the loop so fast travel can set it directly on landing
@@ -75,6 +98,10 @@ function placeCamera(t) {
   const arc = Math.sin(Math.PI * e), hop = a.T.distanceTo(b.T);
   T.lerpVectors(a.T, b.T, e); T.y += arc * .8;
   C.lerpVectors(a.C, b.C, e); C.y += arc * (2 + hop * .18);
+  if (Math.abs(orbit.off) > 1e-4) {
+    const c = V(...W[ORDER[orbit.island]]), ang = orbit.off * (1 - arc);
+    C.sub(c).applyAxisAngle(UP, ang).add(c); T.sub(c).applyAxisAngle(UP, ang).add(c);
+  }
   camera.position.copy(C);
   camera.lookAt(T);
   const wa = V(...W[ORDER[i]]), wb = V(...W[ORDER[i + 1]]), rest = 1 - arc, ca = t * .55;
@@ -257,7 +284,20 @@ function pick(cur) {
   hovObj = o;
 }
 let hovObj = null;
+// drag sideways (mouse or finger) to orbit; vertical swipes still scroll because the canvas only claims pan-x
+let drag = null, dragged = false;
+canvas.addEventListener('pointerdown', e => { if (rig.p > .35 && !tv.active) { drag = { x: e.clientX, id: e.pointerId }; dragged = false; } });
+addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const dx = e.clientX - drag.x; drag.x = e.clientX;
+  if (Math.abs(dx) > 0) dragged = dragged || Math.abs(dx) > 3;
+  const [lo, hi] = orbitRanges[orbit.island];
+  orbit.target = clamp(orbit.target - dx * (touch ? .012 : .008), lo, hi);
+});
+addEventListener('pointerup', () => { drag = null; });
+addEventListener('pointercancel', () => { drag = null; });
 canvas.addEventListener('click', e => {
+  if (dragged) { dragged = false; return; } // a drag isn't a tap
   if (hoverId) return travel(ORDER.indexOf(hoverId));
   if (tv.active) return;
   // a tap has no hover before it, so raycast at the tap point
@@ -298,6 +338,7 @@ if (!reduced) {
 function resize() {
   portrait = innerWidth < innerHeight;
   poses = ORDER.map((_, i) => pose(i));
+  orbitRanges = ORDER.map((_, i) => orbitRange(i));
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.fov = innerWidth / innerHeight < 1 ? 50 : 35;
@@ -313,6 +354,9 @@ renderer.setAnimationLoop(() => {
   world.update(reduced ? 0 : t);
   const dt = Math.min(.05, t - lastT); lastT = t;
   if (!tv.active) rig.p += (Math.min(N - 1, scrollY / secH()) - rig.p) * Math.min(1, dt * 7);
+  const near = Math.round(rig.p);
+  if (near !== orbit.island) { orbit.island = near; orbit.target = 0; } // a new island starts from its own angle
+  orbit.off += (orbit.target - orbit.off) * Math.min(1, dt * 8);
   const cur = tv.active ? flyCamera() : placeCamera(t);
   fadePuffs();
   pick(cur);
@@ -321,7 +365,7 @@ renderer.setAnimationLoop(() => {
     lastCur = cur;
     navBtns.forEach((b, i) => b.classList.toggle('on', i === cur));
     dotEls.forEach((d, i) => d.classList.toggle('on', i <= cur));
-    hint.textContent = (cur ? `${verb} the objects to take them apart. ` : '') + (cur < N - 1 ? `Scroll to fly → 0${cur + 2} ${NAMES[ORDER[cur + 1]]}` : 'End of the tour. Thanks for flying!');
+    hint.textContent = (cur ? `Drag to look around, ${verb.toLowerCase()} objects to take them apart. ` : '') + (cur < N - 1 ? `Scroll to fly → 0${cur + 2} ${NAMES[ORDER[cur + 1]]}` : 'End of the tour. Thanks for flying!');
   }
   renderer.render(scene, camera);
 });
