@@ -12,7 +12,7 @@ if (touch) document.querySelectorAll('[data-verb]').forEach(el => { el.textConte
 // ---- renderer, scene, lights
 const canvas = document.querySelector('#scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, touch ? 1.5 : 2)); // phones: fewer pixels, smoother frame rate
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
@@ -23,7 +23,7 @@ const sun = new THREE.DirectionalLight('#FFF1DC', 2.4);
 sun.position.set(-8, 18, 18);
 sun.target.position.set(13, 0, 20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.setScalar(touch ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 80 });
 sun.shadow.bias = -.0004; sun.shadow.normalBias = .03;
 scene.add(sun, sun.target);
@@ -38,7 +38,7 @@ const V = (...a) => new THREE.Vector3(...a);
 let portrait = innerWidth < innerHeight;
 function pose(i) {
   if (i === 0) {
-    if (portrait) { const T = V(14, -30, 20); return { T, C: T.clone().add(V(0, 66, 92)) }; }
+    if (portrait) { const T = V(14, -27, 20); return { T, C: T.clone().add(V(0, 68, 96)) }; }
     const T = V(1, -1, 21); return { T, C: T.clone().add(V(0, 38, 70)) };
   }
   const id = ORDER[i], yaw = YAW[id];
@@ -177,7 +177,7 @@ function travel(i) {
   tv.m.lerpVectors(tv.a, tv.b, .5).add(V(0, 3 + d * .3, 0));
   bannerName.textContent = `0${i + 1} ${NAMES[ORDER[i]]}`;
   document.body.classList.add('travelling');
-  setTimeout(() => scrollTo({ top: i * innerHeight, behavior: 'instant' }), 300);
+  setTimeout(() => scrollTo({ top: i * secH(), behavior: 'instant' }), 300);
   let shown = false;
   animate(tv, {
     k: 1, duration: dur, ease: 'inOutSine',
@@ -233,7 +233,10 @@ function explode(g) {
 }
 const explodablesOf = Object.fromEntries(ORDER.map(id => [id, world.explodables.filter(g => g.userData.explode === id)]));
 
+// scroll position is measured in section heights, not innerHeight: on phones the browser bars make the two differ
+const firstSec = document.querySelector('.sec'), secH = () => firstSec.offsetHeight;
 function pick(cur) {
+  if (touch) return; // no hover on touch screens; taps are handled by the click listener
   ray.setFromCamera(mouse, camera);
   if (tv.active) return setHover(null);
   if (rig.p < .35) {
@@ -309,7 +312,7 @@ renderer.setAnimationLoop(() => {
   const t = clock.getElapsedTime();
   world.update(reduced ? 0 : t);
   const dt = Math.min(.05, t - lastT); lastT = t;
-  if (!tv.active) rig.p += (Math.min(N - 1, scrollY / innerHeight) - rig.p) * Math.min(1, dt * 7);
+  if (!tv.active) rig.p += (Math.min(N - 1, scrollY / secH()) - rig.p) * Math.min(1, dt * 7);
   const cur = tv.active ? flyCamera() : placeCamera(t);
   fadePuffs();
   pick(cur);
