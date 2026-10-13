@@ -23,6 +23,8 @@ a { color: inherit; }
 .logo { font: 700 26px var(--round); text-decoration: none; }
 .logo span, .dot { color: var(--acc); }
 .pill { display: flex; align-items: center; gap: 2px; background: var(--cream); border: 2px solid var(--ink); border-radius: 999px; padding: 5px; box-shadow: 0 4px 0 var(--ink); max-width: 100%; overflow-x: auto; }
+.pill { scrollbar-width: none; }
+.pill::-webkit-scrollbar { display: none; }
 .pill-label { display: flex; align-items: center; gap: 8px; padding: 0 10px; font: 13px var(--pix); text-transform: uppercase; color: var(--muted); white-space: nowrap; }
 .pill svg, #tip svg { width: 16px; height: 16px; flex: none; }
 #nav-items { display: flex; gap: 2px; }
@@ -99,4 +101,14 @@ li::before { content: ''; flex: none; width: 10px; height: 10px; margin-top: 7px
   .panel.right { margin-left: 0; }
   .hud { inset: auto 16px 14px; }
   #hint { display: none; }
+  /* compact cards so the island above stays visible */
+  .panel { gap: 10px; }
+  .card { padding: 18px 20px; border-radius: 18px; }
+  h2 { font-size: 34px; }
+  .sub { font-size: 16px; }
+  .panel p, ul { font-size: 15px; line-height: 1.45; }
+  .lead { font-size: 19px; }
+  .btn { padding: 10px 14px; font-size: 15px; }
+  .games i { height: 40px; }
+  .mail { font-size: 19px; }
 }

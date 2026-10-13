@@ -5,6 +5,9 @@ import { buildWorld, ORDER, NAMES, W, TOP, R, CAM } from './world.js';
 const ACC = '#ff5fc0'; // Thompson magenta; cyan #5be3ff and violet #b489ff are the supporting accents
 const N = ORDER.length;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// touch screens have no hover: say "tap" instead
+const touch = matchMedia('(hover: none)').matches, verb = touch ? 'Tap' : 'Hover';
+if (touch) document.querySelectorAll('[data-verb]').forEach(el => { el.textContent = el.textContent[0] === 'H' ? 'Tap' : 'tap'; });
 
 // ---- renderer, scene, lights
 const canvas = document.querySelector('#scene');
@@ -31,15 +34,20 @@ const world = buildWorld(scene, ACC);
 const YAW = CAM;
 const ZOOM = { dj: .62 }, LIFT = { dj: 2.6 }; // the party gets a closer look, from above the crowd
 const V = (...a) => new THREE.Vector3(...a);
+// on a phone held upright the text sits at the bottom, so islands are centred and framed in the top half
+let portrait = innerWidth < innerHeight;
 function pose(i) {
-  if (i === 0) { const T = V(1, -1, 21); return { T, C: T.clone().add(V(0, 38, 70)) }; }
+  if (i === 0) {
+    if (portrait) { const T = V(14, -30, 20); return { T, C: T.clone().add(V(0, 66, 92)) }; }
+    const T = V(1, -1, 21); return { T, C: T.clone().add(V(0, 38, 70)) };
+  }
   const id = ORDER[i], yaw = YAW[id];
   const dir = V(Math.sin(yaw), 0, Math.cos(yaw)), right = V(Math.cos(yaw), 0, -Math.sin(yaw));
-  const T = V(...W[id]).add(V(0, 1, 0)).addScaledVector(right, (i % 2 ? 3.3 : -3.3) * (ZOOM[ORDER[i]] || 1));
-  const z = ZOOM[id] || 1;
+  const z = (ZOOM[id] || 1) * (portrait ? 1.15 : 1);
+  const T = portrait ? V(...W[id]).add(V(0, -3.4, 0)) : V(...W[id]).add(V(0, 1, 0)).addScaledVector(right, (i % 2 ? 3.3 : -3.3) * (ZOOM[id] || 1));
   return { T, C: T.clone().addScaledVector(dir, (9.5 + R[id] * 2.1) * z).add(V(0, (3.2 + R[id] * .75) * z + (LIFT[id] || 0), 0)) };
 }
-const poses = ORDER.map((_, i) => pose(i));
+let poses = ORDER.map((_, i) => pose(i));
 const easeSeg = s => { s = Math.min(1, Math.max(0, (s - .12) / .76)); return s < .5 ? 4 * s * s * s : 1 - Math.pow(-2 * s + 2, 3) / 2; };
 
 // rig.p: 0..N-1 scroll position in "islands"; smoothed in the loop so fast travel can set it directly on landing
@@ -246,7 +254,23 @@ function pick(cur) {
   hovObj = o;
 }
 let hovObj = null;
-canvas.addEventListener('click', () => { if (hoverId) travel(ORDER.indexOf(hoverId)); });
+canvas.addEventListener('click', e => {
+  if (hoverId) return travel(ORDER.indexOf(hoverId));
+  if (tv.active) return;
+  // a tap has no hover before it, so raycast at the tap point
+  mouse.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const cur = Math.round(rig.p);
+  if (rig.p < .35) {
+    let o = ray.intersectObjects(Object.values(world.roots), true)[0]?.object;
+    while (o && !o.userData.id) o = o.parent;
+    if (o) travel(ORDER.indexOf(o.userData.id));
+  } else if (Math.abs(rig.p - cur) < .1) {
+    let o = ray.intersectObjects(explodablesOf[ORDER[cur]], true)[0]?.object;
+    while (o && o.userData.explode === undefined) o = o.parent;
+    if (o) explode(o);
+  }
+});
 document.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', e => {
   const i = [...document.querySelectorAll('.sec')].findIndex(s => '#' + s.id === a.getAttribute('href'));
   if (i >= 0) { e.preventDefault(); travel(i); }
@@ -269,6 +293,8 @@ if (!reduced) {
 
 // ---- loop
 function resize() {
+  portrait = innerWidth < innerHeight;
+  poses = ORDER.map((_, i) => pose(i));
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.fov = innerWidth / innerHeight < 1 ? 50 : 35;
@@ -292,7 +318,7 @@ renderer.setAnimationLoop(() => {
     lastCur = cur;
     navBtns.forEach((b, i) => b.classList.toggle('on', i === cur));
     dotEls.forEach((d, i) => d.classList.toggle('on', i <= cur));
-    hint.textContent = (cur ? 'Hover the objects to take them apart. ' : '') + (cur < N - 1 ? `Scroll to fly → 0${cur + 2} ${NAMES[ORDER[cur + 1]]}` : 'End of the tour. Thanks for flying!');
+    hint.textContent = (cur ? `${verb} the objects to take them apart. ` : '') + (cur < N - 1 ? `Scroll to fly → 0${cur + 2} ${NAMES[ORDER[cur + 1]]}` : 'End of the tour. Thanks for flying!');
   }
   renderer.render(scene, camera);
 });
